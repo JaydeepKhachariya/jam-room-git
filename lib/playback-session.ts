@@ -1,4 +1,4 @@
-import type { Song } from "@/lib/song";
+import { isSong, type Song } from "@/lib/song";
 
 const STORAGE_KEY = "jam-rooms:playback";
 const VERSION = 1;
@@ -11,19 +11,6 @@ export interface PlaybackSession {
   volume: number;
   muted: boolean;
   wasPlaying: boolean;
-}
-
-function isSong(value: unknown): value is Song {
-  if (!value || typeof value !== "object") return false;
-  const song = value as Record<string, unknown>;
-  return (
-    typeof song.id === "string" &&
-    song.id.length > 0 &&
-    typeof song.title === "string" &&
-    Array.isArray(song.artists) &&
-    song.artists.every((artist) => typeof artist === "string") &&
-    (song.thumbnail === null || typeof song.thumbnail === "string")
-  );
 }
 
 function finiteNumber(value: unknown, fallback: number) {
