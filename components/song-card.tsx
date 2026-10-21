@@ -1,5 +1,6 @@
-import { AudioLines, Music, Play } from "lucide-react";
+import { AudioLines, ListPlus, Play } from "lucide-react";
 
+import { SongThumbnail } from "@/components/song-thumbnail";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Song } from "@/lib/song";
@@ -8,11 +9,22 @@ import { cn } from "@/lib/utils";
 interface SongCardProps {
   song: Song;
   isCurrent: boolean;
-  onPlay: () => void;
+  /** What clicking the card does: play it now, or add it to a queue. */
+  action?: "play" | "add";
+  onSelect: () => void;
 }
 
-export function SongCard({ song, isCurrent, onPlay }: SongCardProps) {
+export function SongCard({
+  song,
+  isCurrent,
+  action = "play",
+  onSelect,
+}: SongCardProps) {
   const artists = song.artists.join(", ");
+  const label =
+    action === "add"
+      ? `Add ${song.title} by ${artists} to the queue`
+      : `Play ${song.title} by ${artists}`;
 
   return (
     <Card
@@ -23,19 +35,12 @@ export function SongCard({ song, isCurrent, onPlay }: SongCardProps) {
       )}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
-        {song.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={song.thumbnail}
-            alt=""
-            loading="lazy"
-            className="size-full object-cover transition-transform duration-300 group-hover/song:scale-105"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center">
-            <Music className="size-10 text-muted-foreground" />
-          </div>
-        )}
+        <SongThumbnail
+          src={song.thumbnail}
+          loading="lazy"
+          className="transition-transform duration-300 group-hover/song:scale-105"
+          iconClassName="size-10"
+        />
 
         <div
           aria-hidden="true"
@@ -48,6 +53,8 @@ export function SongCard({ song, isCurrent, onPlay }: SongCardProps) {
         >
           {isCurrent ? (
             <AudioLines className="size-5" />
+          ) : action === "add" ? (
+            <ListPlus className="size-5" />
           ) : (
             <Play className="size-5 fill-current" />
           )}
@@ -65,8 +72,8 @@ export function SongCard({ song, isCurrent, onPlay }: SongCardProps) {
 
       <button
         type="button"
-        onClick={onPlay}
-        aria-label={`Play ${song.title} by ${artists}`}
+        onClick={onSelect}
+        aria-label={label}
         aria-current={isCurrent || undefined}
         className="absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       />

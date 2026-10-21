@@ -135,6 +135,9 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const statusRef = useRef<PlayerStatus>(status);
+  // Last known position, for when the player can't report one: a cued
+  // video reports 0 until it starts, wherever it was cued.
+  const positionRef = useRef(0);
 
   useEffect(() => {
     callbacksRef.current = { onEnded, onError };
@@ -175,6 +178,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
                   setStatus("playing");
                   setDuration(player.getDuration());
                 } else if (data === PLAYER_STATE.PAUSED) {
+                  positionRef.current = player.getCurrentTime();
+                  setCurrentTime(positionRef.current);
                   setStatus("paused");
                 } else if (data === PLAYER_STATE.BUFFERING) {
                   setStatus("loading");
@@ -219,7 +224,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     const interval = window.setInterval(() => {
       const player = playerRef.current;
       if (!player) return;
-      setCurrentTime(player.getCurrentTime());
+      positionRef.current = player.getCurrentTime();
+      setCurrentTime(positionRef.current);
       setDuration(player.getDuration());
     }, 500);
 
@@ -244,6 +250,7 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
       window.clearTimeout(autoplayTimerRef.current);
       setAutoplayBlocked(false);
       setStatus(autoplay ? "loading" : "paused");
+      positionRef.current = startSeconds;
       setCurrentTime(startSeconds);
       setDuration(knownDuration);
 
@@ -291,8 +298,25 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     playerRef.current?.playVideo();
   }, []);
 
+  const pause = useCallback(() => {
+    playerRef.current?.pauseVideo();
+  }, []);
+
+  /**
+   * The exact position while playing, rather than the last polled one.
+   * Otherwise the position it was paused, cued or sought at.
+   */
+  const getCurrentTime = useCallback(() => {
+    const player = playerRef.current;
+    if (player && statusRef.current === "playing") {
+      return player.getCurrentTime();
+    }
+    return positionRef.current;
+  }, []);
+
   const seek = useCallback((seconds: number) => {
     playerRef.current?.seekTo(seconds, true);
+    positionRef.current = seconds;
     setCurrentTime(seconds);
   }, []);
 
@@ -324,6 +348,7 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   const stop = useCallback(() => {
     playerRef.current?.stopVideo();
     setStatus("idle");
+    positionRef.current = 0;
     setCurrentTime(0);
     setDuration(0);
   }, []);
@@ -339,6 +364,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     load,
     togglePlay,
     resume,
+    pause,
+    getCurrentTime,
     seek,
     setVolume,
     setMuted,
