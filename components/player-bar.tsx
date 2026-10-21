@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Music,
   Pause,
   Play,
   SkipBack,
@@ -10,6 +9,7 @@ import {
   VolumeX,
 } from "lucide-react";
 
+import { SongThumbnail } from "@/components/song-thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -88,16 +88,7 @@ export function PlayerBar({
       <div className="mx-auto grid max-w-5xl grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 items-center gap-3 sm:items-end sm:self-end">
           <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
-            {song.thumbnail ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={song.thumbnail}
-                alt=""
-                className="size-full object-cover"
-              />
-            ) : (
-              <Music className="size-5 text-muted-foreground" />
-            )}
+            <SongThumbnail src={song.thumbnail} iconClassName="size-5" />
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{song.title}</p>

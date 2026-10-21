@@ -1,5 +1,6 @@
-import { AudioLines, Music, Play } from "lucide-react";
+import { AudioLines, Play } from "lucide-react";
 
+import { SongThumbnail } from "@/components/song-thumbnail";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Song } from "@/lib/song";
@@ -23,19 +24,12 @@ export function SongCard({ song, isCurrent, onPlay }: SongCardProps) {
       )}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
-        {song.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={song.thumbnail}
-            alt=""
-            loading="lazy"
-            className="size-full object-cover transition-transform duration-300 group-hover/song:scale-105"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center">
-            <Music className="size-10 text-muted-foreground" />
-          </div>
-        )}
+        <SongThumbnail
+          src={song.thumbnail}
+          loading="lazy"
+          className="transition-transform duration-300 group-hover/song:scale-105"
+          iconClassName="size-10"
+        />
 
         <div
           aria-hidden="true"
