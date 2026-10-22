@@ -1,7 +1,24 @@
-import { isSong, type Song } from "@/lib/song";
+import { isDuration, isSong, type Song } from "@/lib/song";
 
 export const ROOM_NAME_MAX = 60;
 export const MEMBER_NAME_MAX = 40;
+
+/**
+ * Each browser keeps a private random token. The server only ever shares
+ * a hash of it (the member id), so the token can prove who's the host.
+ * Sent as this header, or the `client` query param where headers can't be
+ * set (EventSource).
+ */
+export const CLIENT_HEADER = "X-Jam-Client";
+
+/** The Realtime channel a room's updates and presence go through. */
+export function roomChannelName(roomId: string) {
+  return `room:${roomId}`;
+}
+
+export function isClientToken(value: unknown): value is string {
+  return typeof value === "string" && /^[\w-]{16,128}$/.test(value);
+}
 
 export interface QueuedSong extends Song {
   /** Unique per queue entry, so the same song can be queued twice. */
@@ -22,9 +39,12 @@ export interface RoomPlayback {
   updatedAt: number;
 }
 
+/** A person in the room; several tabs of one browser count once. */
 export interface RoomMember {
   id: string;
   name: string;
+  /** When they joined, for listing people in join order. */
+  joinedAt: number;
 }
 
 export interface RoomSnapshot {
@@ -32,7 +52,12 @@ export interface RoomSnapshot {
   name: string;
   queue: QueuedSong[];
   playback: RoomPlayback;
-  members: RoomMember[];
+  /** Member id of the room's creator, who can remove people. */
+  ownerId: string;
+  /** Everyone can change the queue; when false, only the host can. */
+  open: boolean;
+  /** Member id of whoever this snapshot was sent to. */
+  you: string;
   /** Increments on every change, so stale updates can be ignored. */
   version: number;
   serverTime: number;
@@ -47,11 +72,29 @@ export type RoomAction =
   | { type: "add"; song: Song; addedBy: string }
   | { type: "remove"; queueId: string }
   | { type: "jump"; queueId: string }
+  /** Puts the entry just after `afterQueueId`, or first when null. */
+  | { type: "move"; queueId: string; afterQueueId: string | null }
   | { type: "play" }
   | { type: "pause" }
   | { type: "seek"; position: number }
   | { type: "next"; from: string }
-  | { type: "previous"; from: string };
+  | { type: "previous"; from: string }
+  | { type: "removeMember"; memberId: string };
+
+/**
+ * Whether a song is waiting in the queue: it's the current song or comes
+ * after it. Songs already played can be added again.
+ */
+export function isQueued(
+  queue: Song[],
+  playback: Pick<RoomPlayback, "index">,
+  songId: string
+) {
+  for (let i = Math.max(0, playback.index); i < queue.length; i++) {
+    if (queue[i].id === songId) return true;
+  }
+  return false;
+}
 
 /** Where playback is at `now` (server time), in seconds. */
 export function playbackPosition(playback: RoomPlayback, now: number) {
@@ -78,6 +121,7 @@ function cleanSong(value: unknown): Song | null {
     title: value.title.slice(0, 300),
     artists: value.artists.slice(0, 10).map((artist) => artist.slice(0, 200)),
     thumbnail,
+    ...(isDuration(value.duration) ? { duration: value.duration } : {}),
   };
 }
 
@@ -101,6 +145,15 @@ export function parseRoomAction(value: unknown): RoomAction | null {
       return isId(action.queueId)
         ? { type: action.type, queueId: action.queueId }
         : null;
+    case "move":
+      return isId(action.queueId) &&
+        (action.afterQueueId === null || isId(action.afterQueueId))
+        ? {
+            type: "move",
+            queueId: action.queueId,
+            afterQueueId: action.afterQueueId,
+          }
+        : null;
     case "play":
     case "pause":
       return { type: action.type };
@@ -112,6 +165,10 @@ export function parseRoomAction(value: unknown): RoomAction | null {
     case "next":
     case "previous":
       return isId(action.from) ? { type: action.type, from: action.from } : null;
+    case "removeMember":
+      return isId(action.memberId)
+        ? { type: "removeMember", memberId: action.memberId }
+        : null;
     default:
       return null;
   }

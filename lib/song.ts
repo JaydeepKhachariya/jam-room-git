@@ -3,6 +3,8 @@ export interface Song {
   title: string;
   artists: string[];
   thumbnail: string | null;
+  /** Length in seconds, when YouTube Music reports it. */
+  duration?: number;
 }
 
 export function isSong(value: unknown): value is Song {
@@ -14,6 +16,11 @@ export function isSong(value: unknown): value is Song {
     typeof song.title === "string" &&
     Array.isArray(song.artists) &&
     song.artists.every((artist) => typeof artist === "string") &&
-    (song.thumbnail === null || typeof song.thumbnail === "string")
+    (song.thumbnail === null || typeof song.thumbnail === "string") &&
+    (song.duration === undefined || isDuration(song.duration))
   );
+}
+
+export function isDuration(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

@@ -1,15 +1,10 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
-import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import { Geist_Mono, Inter } from "next/font/google";
+
 import { cn } from "@/lib/utils";
-import { ThemeProvider } from "@/components/theme-provider"
+import "./globals.css";
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'});
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -21,23 +16,19 @@ export const metadata: Metadata = {
   description: "Search songs and play them together.",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#09090b",
+  colorScheme: "dark",
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      suppressHydrationWarning
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
+      // Dark only: the design has a single zinc theme.
+      className={cn("dark h-full antialiased", inter.variable, geistMono.variable)}
     >
-      <body className="min-h-full flex flex-col">
-        <ThemeProvider
-           attribute="class"
-           defaultTheme="system"
-           enableSystem
-           disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
-      </body>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }
