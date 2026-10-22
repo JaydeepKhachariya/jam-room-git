@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Jam Rooms
 
-## Getting Started
+Search for songs and play them, or start a room and listen together:
+everyone in a room hears the same song at the same moment and shares
+one queue.
 
-First, run the development server:
+## Setup
+
+Rooms are stored in [Supabase](https://supabase.com), so they work
+across the many server instances Vercel runs.
+
+1. Create a Supabase project.
+2. In the SQL editor, run
+   [`supabase/migrations/20261022000000_rooms.sql`](supabase/migrations/20261022000000_rooms.sql).
+3. Under **Realtime → Settings**, make sure public channels are allowed
+   (public access on, not "private channels only"). Rooms use public
+   Broadcast and Presence channels named `room:<id>`.
+4. Copy `.env.example` to `.env.local` and fill in the project URL,
+   publishable key and secret key (**Project Settings → API Keys**).
+   Add the same three variables to the Vercel project.
+
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:5342](http://localhost:5342).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How rooms stay in sync
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- API routes are the only thing that writes to the `rooms` table, using
+  the secret key; the table has row level security on and no policies.
+  Each change is applied only if the room's `version` hasn't moved
+  since it was read, so concurrent changes retry instead of clobbering
+  each other.
+- After a change, the new room state is broadcast on the room's Realtime
+  channel. Browsers subscribe with the publishable key, and also use
+  Presence there to show who's listening.
+- Playback is stored as "at `position` seconds at server time
+  `updatedAt`". Each browser estimates the server's clock (`/api/time`)
+  and nudges its player whenever it drifts more than 0.35s.

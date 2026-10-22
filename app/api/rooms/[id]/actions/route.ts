@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 
 import { parseRoomAction } from '@/lib/room';
+import {
+  clientToken,
+  handleRoomErrors,
+  missingClient,
+  roomResponse,
+} from '@/lib/room-request';
 import { applyRoomAction } from '@/lib/rooms';
 
 export async function POST(
@@ -8,16 +14,15 @@ export async function POST(
   ctx: RouteContext<'/api/rooms/[id]/actions'>
 ) {
   const { id } = await ctx.params;
-  const action = parseRoomAction(await request.json().catch(() => null));
+  const token = clientToken(request);
+  if (!token) return missingClient();
 
+  const action = parseRoomAction(await request.json().catch(() => null));
   if (!action) {
     return NextResponse.json({ error: 'Invalid action.' }, { status: 400 });
   }
 
-  const room = applyRoomAction(id, action);
-  if (!room) {
-    return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
-  }
-
-  return NextResponse.json(room);
+  return handleRoomErrors(action.type, async () =>
+    roomResponse(await applyRoomAction(id, token, action))
+  );
 }

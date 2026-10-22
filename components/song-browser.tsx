@@ -34,6 +34,8 @@ interface SongBrowserProps {
   notice?: ReactNode;
   currentSongId?: string | null;
   cardAction?: "play" | "add";
+  /** Ids of songs already in the queue, marked on their cards. */
+  queuedSongIds?: ReadonlySet<string>;
   onSelect: (song: Song, index: number, songs: Song[]) => void;
   gridClassName?: string;
 }
@@ -44,6 +46,7 @@ export function SongBrowser({
   notice,
   currentSongId,
   cardAction,
+  queuedSongIds,
   onSelect,
   gridClassName = GRID_CLASS,
 }: SongBrowserProps) {
@@ -197,6 +200,7 @@ export function SongBrowser({
                 song={song}
                 isCurrent={currentSongId === song.id}
                 action={cardAction}
+                queued={queuedSongIds?.has(song.id)}
                 onSelect={() => onSelect(song, index, songs)}
               />
             ))}

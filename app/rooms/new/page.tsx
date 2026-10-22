@@ -18,7 +18,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { saveDisplayName, useDisplayName } from "@/hooks/use-display-name";
-import { MEMBER_NAME_MAX, ROOM_NAME_MAX } from "@/lib/room";
+import { getClientToken } from "@/lib/client-token";
+import { CLIENT_HEADER, MEMBER_NAME_MAX, ROOM_NAME_MAX } from "@/lib/room";
 
 export default function NewRoomPage() {
   const router = useRouter();
@@ -42,7 +43,11 @@ export default function NewRoomPage() {
     try {
       const response = await fetch("/api/rooms", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Makes this browser the room's host.
+          [CLIENT_HEADER]: getClientToken(),
+        },
         body: JSON.stringify({ name: roomName.trim() || defaultRoomName }),
       });
       const data: { id?: string; error?: string } = await response.json();

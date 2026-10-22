@@ -138,6 +138,9 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   // Last known position, for when the player can't report one: a cued
   // video reports 0 until it starts, wherever it was cued.
   const positionRef = useRef(0);
+  // The iframe only reports its time every ~250ms; remember when the
+  // reported value last changed so reads in between can extrapolate.
+  const reportedRef = useRef({ time: -1, at: 0 });
 
   useEffect(() => {
     callbacksRef.current = { onEnded, onError };
@@ -232,6 +235,20 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     return () => window.clearInterval(interval);
   }, [status]);
 
+  // Note when each new time report arrives (see getCurrentTime).
+  useEffect(() => {
+    if (status !== "playing") return;
+
+    const interval = window.setInterval(() => {
+      const time = playerRef.current?.getCurrentTime() ?? -1;
+      if (time !== reportedRef.current.time) {
+        reportedRef.current = { time, at: performance.now() };
+      }
+    }, 50);
+
+    return () => window.clearInterval(interval);
+  }, [status]);
+
   /** Resolves once the player can accept commands. */
   const whenReady = useCallback(async () => {
     await readyRef.current;
@@ -303,15 +320,19 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   }, []);
 
   /**
-   * The exact position while playing, rather than the last polled one.
-   * Otherwise the position it was paused, cued or sought at.
+   * The position as precisely as it's known: while playing, the player's
+   * last report plus the time since. Otherwise the position it was
+   * paused, cued or sought at.
    */
   const getCurrentTime = useCallback(() => {
     const player = playerRef.current;
-    if (player && statusRef.current === "playing") {
-      return player.getCurrentTime();
-    }
-    return positionRef.current;
+    if (!player || statusRef.current !== "playing") return positionRef.current;
+
+    const time = player.getCurrentTime();
+    const reported = reportedRef.current;
+    if (time !== reported.time) return time;
+    // Cap it, in case playback stalled without a state change.
+    return time + Math.min(performance.now() - reported.at, 1000) / 1000;
   }, []);
 
   const seek = useCallback((seconds: number) => {

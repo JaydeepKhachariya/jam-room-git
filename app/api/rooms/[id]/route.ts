@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server';
+import {
+  clientToken,
+  handleRoomErrors,
+  missingClient,
+  roomResponse,
+} from '@/lib/room-request';
+import { getRoom } from '@/lib/rooms';
 
-import { getRoomSnapshot } from '@/lib/rooms';
-
-export async function GET(_request: Request, ctx: RouteContext<'/api/rooms/[id]'>) {
+export async function GET(request: Request, ctx: RouteContext<'/api/rooms/[id]'>) {
   const { id } = await ctx.params;
-  const room = getRoomSnapshot(id);
+  const token = clientToken(request);
+  if (!token) return missingClient();
 
-  if (!room) {
-    return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
-  }
-
-  return NextResponse.json(room);
+  return handleRoomErrors('get', async () => roomResponse(await getRoom(id, token)));
 }

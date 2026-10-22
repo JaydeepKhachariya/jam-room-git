@@ -1,6 +1,7 @@
-import { AudioLines, ListPlus, Play } from "lucide-react";
+import { AudioLines, Check, ListPlus, Play } from "lucide-react";
 
 import { SongThumbnail } from "@/components/song-thumbnail";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Song } from "@/lib/song";
@@ -11,6 +12,8 @@ interface SongCardProps {
   isCurrent: boolean;
   /** What clicking the card does: play it now, or add it to a queue. */
   action?: "play" | "add";
+  /** Already waiting in the queue, so adding it again does nothing. */
+  queued?: boolean;
   onSelect: () => void;
 }
 
@@ -18,11 +21,14 @@ export function SongCard({
   song,
   isCurrent,
   action = "play",
+  queued = false,
   onSelect,
 }: SongCardProps) {
   const artists = song.artists.join(", ");
-  const label =
-    action === "add"
+  const inQueue = action === "add" && queued;
+  const label = inQueue
+    ? `${song.title} by ${artists} is already in the queue`
+    : action === "add"
       ? `Add ${song.title} by ${artists} to the queue`
       : `Play ${song.title} by ${artists}`;
 
@@ -42,6 +48,13 @@ export function SongCard({
           iconClassName="size-10"
         />
 
+        {inQueue && (
+          <Badge className="absolute top-2 left-2 shadow-md">
+            {isCurrent ? <AudioLines /> : <Check />}
+            {isCurrent ? "Playing" : "In queue"}
+          </Badge>
+        )}
+
         <div
           aria-hidden="true"
           className={cn(
@@ -53,6 +66,8 @@ export function SongCard({
         >
           {isCurrent ? (
             <AudioLines className="size-5" />
+          ) : inQueue ? (
+            <Check className="size-5" />
           ) : action === "add" ? (
             <ListPlus className="size-5" />
           ) : (
@@ -72,10 +87,14 @@ export function SongCard({
 
       <button
         type="button"
-        onClick={onSelect}
+        onClick={inQueue ? undefined : onSelect}
         aria-label={label}
+        aria-disabled={inQueue || undefined}
         aria-current={isCurrent || undefined}
-        className="absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={cn(
+          "absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          inQueue && "cursor-default"
+        )}
       />
     </Card>
   );
