@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Pause,
   Play,
@@ -65,6 +66,27 @@ export function PlayerBar({
   onVolumeChange,
   onToggleMute,
 }: PlayerBarProps) {
+  // While the seek bar is dragged, show where it's going and seek once
+  // on release, rather than on every step of the drag.
+  const [dragTime, setDragTime] = useState<number | null>(null);
+  const shownTime = dragTime ?? currentTime;
+
+  const seekProps = {
+    "aria-label": "Seek",
+    min: 0,
+    max: Math.max(duration, 1),
+    step: 1,
+    // An array: the Slider renders one thumb per value.
+    value: [Math.min(shownTime, duration)],
+    disabled: !duration,
+    onValueChange: (value: number | readonly number[]) =>
+      setDragTime(sliderNumber(value)),
+    onValueCommitted: (value: number | readonly number[]) => {
+      setDragTime(null);
+      onSeek(sliderNumber(value));
+    },
+  };
+
   const isPlaying = status === "playing";
   const isLoading = status === "loading";
 
@@ -134,17 +156,9 @@ export function PlayerBar({
           </div>
           <div className="hidden h-4 w-full items-center gap-2 sm:flex">
             <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">
-              {formatTime(currentTime)}
+              {formatTime(shownTime)}
             </span>
-            <Slider
-              aria-label="Seek"
-              min={0}
-              max={Math.max(duration, 1)}
-              step={1}
-              value={Math.min(currentTime, duration)}
-              disabled={!duration}
-              onValueChange={(value) => onSeek(sliderNumber(value))}
-            />
+            <Slider {...seekProps} />
             <span className="w-10 text-xs text-muted-foreground tabular-nums">
               {formatTime(duration)}
             </span>
@@ -166,23 +180,15 @@ export function PlayerBar({
             min={0}
             max={100}
             step={1}
-            value={muted ? 0 : volume}
+            value={[muted ? 0 : volume]}
             onValueChange={(value) => onVolumeChange(sliderNumber(value))}
           />
         </div>
 
         <div className="col-span-2 flex items-center gap-2 sm:hidden">
-          <Slider
-            aria-label="Seek"
-            min={0}
-            max={Math.max(duration, 1)}
-            step={1}
-            value={Math.min(currentTime, duration)}
-            disabled={!duration}
-            onValueChange={(value) => onSeek(sliderNumber(value))}
-          />
+          <Slider {...seekProps} />
           <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatTime(shownTime)} / {formatTime(duration)}
           </span>
         </div>
       </div>
