@@ -38,7 +38,9 @@ export function InfiniteScrollTrigger({
           onLoadMoreRef.current();
         }
       },
-      { rootMargin }
+      // Pages scroll inside the app shell, not the window; the margin
+      // only reaches ahead within the element that actually scrolls.
+      { root: element.closest("[data-scroll-root]"), rootMargin }
     );
 
     observer.observe(element);

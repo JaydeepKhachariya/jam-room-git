@@ -1,17 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, DoorClosed, UserX } from "lucide-react";
 
+import { usePlayerShell } from "@/components/player/player-provider";
 import { PlayerBar } from "@/components/player-bar";
+import { QueueList } from "@/components/queue-panel";
 import { JoinRoomForm } from "@/components/room/join-room-form";
 import { RoomMembers } from "@/components/room/room-members";
-import { RoomQueue } from "@/components/room/room-queue";
 import { ShareRoomButton } from "@/components/room/share-room-button";
-import { SongBrowser } from "@/components/song-browser";
+import { SearchForm } from "@/components/search-form";
+import {
+  PageMain,
+  SectionHeader,
+  SidePanel,
+} from "@/components/shell/layout-parts";
+import { StartRoomLink } from "@/components/shell/sidebar";
+import { SongCard } from "@/components/song-card";
+import { SongFeedGrid, SongGridSkeleton } from "@/components/song-grid";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyContent,
@@ -24,9 +40,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { useResumeOnGesture } from "@/hooks/use-resume-on-gesture";
 import { useRoom } from "@/hooks/use-room";
+import { useSongFeed } from "@/hooks/use-song-feed";
 import { useYouTubePlayer } from "@/hooks/use-youtube-player";
+import { forgetRooms, rememberRoom } from "@/lib/my-rooms";
 import { playbackPosition, type RoomMember } from "@/lib/room";
-import { cn } from "@/lib/utils";
 
 /** How far a playing listener may drift from the room before correcting. */
 const DRIFT_TOLERANCE_S = 0.35;
@@ -214,55 +231,51 @@ export function RoomView({ roomId }: { roomId: string }) {
 
   useResumeOnGesture(autoplayBlocked, resume);
 
+  // While a room is open it does the playing: the shell pauses your own
+  // player and shows this room's bar instead.
+  const { setRoomActive, footerSlot, setPanelOpen } = usePlayerShell();
+  useEffect(() => {
+    setRoomActive(true);
+    return () => setRoomActive(false);
+  }, [setRoomActive]);
+
+  // Remember it under "Your rooms"; forget it once it's gone.
+  const roomName = room?.name;
+  useEffect(() => {
+    if (active && name && roomName) rememberRoom(roomId, roomName);
+  }, [active, name, roomId, roomName]);
+  useEffect(() => {
+    if (status === "not-found" || status === "removed") forgetRooms([roomId]);
+  }, [status, roomId]);
+
+  // Song search; suggestions until something is searched.
+  const [search, setSearch] = useState<string | null>(null);
+  const feed = useSongFeed(
+    search ? `/api/search?q=${encodeURIComponent(search)}` : "/api/suggestions"
+  );
+
   if (status === "removed") {
     return (
-      <div className="flex flex-1 items-center justify-center bg-muted/40 px-4">
-        <Empty className="max-w-md border bg-background">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <UserX />
-            </EmptyMedia>
-            <EmptyTitle>You were removed from this room</EmptyTitle>
-            <EmptyDescription>
-              The host removed you, so you can&apos;t rejoin it. You can
-              still start your own room.
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button nativeButton={false} render={<Link href="/rooms/new" />}>
-              Start a room
-            </Button>
-          </EmptyContent>
-        </Empty>
-      </div>
+      <CenteredState
+        icon={<UserX />}
+        title="You were removed from this room"
+        description="The host removed you, so you can't rejoin it. You can still start your own room."
+      />
     );
   }
 
   if (status === "not-found" || status === "error") {
     const notFound = status === "not-found";
     return (
-      <div className="flex flex-1 items-center justify-center bg-muted/40 px-4">
-        <Empty className="max-w-md border bg-background">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              {notFound ? <DoorClosed /> : <AlertCircle />}
-            </EmptyMedia>
-            <EmptyTitle>
-              {notFound ? "Room not found" : "Couldn't load the room"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {notFound
-                ? "This room has closed, or the link is wrong. Ask for a new link or start your own room."
-                : "Check your connection and reload the page."}
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button nativeButton={false} render={<Link href="/rooms/new" />}>
-              Start a room
-            </Button>
-          </EmptyContent>
-        </Empty>
-      </div>
+      <CenteredState
+        icon={notFound ? <DoorClosed /> : <AlertCircle />}
+        title={notFound ? "Room not found" : "Couldn't load the room"}
+        description={
+          notFound
+            ? "This room has closed, or the link is wrong. Ask for a new link or start your own room."
+            : "Check your connection and reload the page."
+        }
+      />
     );
   }
 
@@ -270,11 +283,16 @@ export function RoomView({ roomId }: { roomId: string }) {
 
   if (!name) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-muted/40 px-4 py-10">
+      <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
         <JoinRoomForm roomName={room.name} />
       </div>
     );
   }
+
+  const isHost = room.you === room.ownerId;
+  // Host-only rooms: everyone can still play, pause and skip, but only
+  // the host changes what's in the queue.
+  const canEdit = room.open || isHost;
 
   function markIntent() {
     intentRef.current = {
@@ -323,37 +341,27 @@ export function RoomView({ roomId }: { roomId: string }) {
   }
 
   return (
-    <div className="flex flex-1 justify-center bg-muted/40">
-      <main
-        className={cn(
-          "flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-8 sm:py-14",
-          current && "pb-40 sm:pb-36"
-        )}
-      >
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 flex-col gap-1">
-            <Button
-              variant="link"
-              size="sm"
-              className="self-start px-0 text-muted-foreground"
-              nativeButton={false}
-              render={<Link href="/" />}
+    <>
+      <PageMain>
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-3">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 self-start rounded text-[13px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <ArrowLeft data-icon="inline-start" />
+              <ArrowLeft className="size-3.5" />
               Jam Rooms
-            </Button>
-            <h1 className="truncate text-2xl font-semibold tracking-tight">
+            </Link>
+            <h1 className="truncate text-[1.75rem] leading-tight font-semibold tracking-tight">
               {room.name}
             </h1>
-            <div className="mt-2">
-              <RoomMembers
-                members={members}
-                ownerId={room.ownerId}
-                you={room.you}
-                connected={connected}
-                onRemove={handleRemoveMember}
-              />
-            </div>
+            <RoomMembers
+              members={members}
+              ownerId={room.ownerId}
+              you={room.you}
+              connected={connected}
+              onRemove={handleRemoveMember}
+            />
           </div>
           <ShareRoomButton />
         </header>
@@ -366,90 +374,177 @@ export function RoomView({ roomId }: { roomId: string }) {
           </Alert>
         )}
 
-        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <RoomQueue
-            queue={queue}
-            currentIndex={playback.index}
-            playing={playback.playing}
-            onJump={(queueId) => {
-              setPlaybackError("");
-              void send({ type: "jump", queueId });
-            }}
-            onRemove={(queueId) => void send({ type: "remove", queueId })}
-            className="max-h-80 lg:sticky lg:top-6 lg:order-last lg:max-h-[calc(100svh-12rem)]"
-          />
-
-          <div className="flex min-w-0 flex-col gap-8">
-            <SongBrowser
-              heading={
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold tracking-tight">
-                    Add songs
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Anything you pick joins the queue for everyone.
-                  </p>
-                </div>
-              }
-              notice={
-                playbackError && (
-                  <Alert variant="destructive">
-                    <AlertCircle />
-                    <AlertTitle>Couldn&apos;t play track</AlertTitle>
-                    <AlertDescription>{playbackError}</AlertDescription>
-                  </Alert>
-                )
-              }
-              currentSongId={current?.id}
-              cardAction="add"
-              queuedSongIds={queuedSongIds}
-              onSelect={(song) => {
-                setPlaybackError("");
-                void send({ type: "add", song, addedBy: name });
-              }}
-              gridClassName="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4"
-            />
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4">
+          <div className="flex min-w-56 flex-1 flex-col gap-0.5">
+            <h2 className="text-base font-semibold">Add songs</h2>
+            <p className="text-muted-foreground">
+              {canEdit
+                ? "Anything you pick joins the queue for everyone."
+                : "Only the host can add songs in this room."}
+            </p>
           </div>
-        </div>
-      </main>
+          <SearchForm
+            key={search ?? ""}
+            defaultValue={search ?? ""}
+            primary
+            searching={search !== null && feed.loading}
+            onSearch={setSearch}
+            onClear={() => setSearch(null)}
+            className="flex-[1_1_20rem]"
+          />
+        </section>
 
-      {current && (
-        <PlayerBar
-          song={current}
-          status={playerStatus}
-          currentTime={player.currentTime}
-          duration={player.duration}
-          volume={player.volume}
-          muted={player.muted}
-          resumePending={autoplayBlocked}
-          hasPrevious={playback.index > 0}
-          hasNext={playback.index < queue.length - 1}
-          onTogglePlay={handleTogglePlay}
-          onPrevious={handlePrevious}
-          onNext={() => void send({ type: "next", from: current.queueId })}
-          onSeek={handleSeek}
-          onVolumeChange={player.setVolume}
-          onToggleMute={player.toggleMute}
+        {playbackError && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Couldn&apos;t play track</AlertTitle>
+            <AlertDescription>{playbackError}</AlertDescription>
+          </Alert>
+        )}
+
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title={
+              search ? <>Results for &ldquo;{search}&rdquo;</> : "Suggested for you"
+            }
+            action={
+              search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch(null)}
+                  className="shrink-0 rounded text-[13px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  Back to suggestions
+                </button>
+              )
+            }
+          />
+          <SongFeedGrid
+            feed={feed}
+            feedKey={search ?? "suggestions"}
+            errorTitle={search ? "Search failed" : "Couldn't load suggestions"}
+            emptyTitle={search ? "No songs found" : "No suggestions right now"}
+            emptyDescription={
+              search
+                ? "Try a different title or artist."
+                : "Search for any song or artist to get started."
+            }
+            renderCard={(song) => (
+              <SongCard
+                key={song.id}
+                song={song}
+                action="add"
+                isCurrent={current?.id === song.id}
+                queued={queuedSongIds.has(song.id)}
+                readOnly={!canEdit}
+                onSelect={() => {
+                  setPlaybackError("");
+                  void send({ type: "add", song, addedBy: name });
+                }}
+              />
+            )}
+          />
+        </section>
+      </PageMain>
+
+      <SidePanel label="Queue">
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-base font-semibold">Queue</h2>
+          <span className="text-xs text-muted-foreground">
+            {queue.length === 0
+              ? "Shared with everyone in the room."
+              : `${queue.length} ${queue.length === 1 ? "song" : "songs"} · ${
+                  canEdit ? "drag to reorder" : "only the host can change it"
+                }`}
+          </span>
+        </div>
+        <QueueList
+          queue={queue}
+          currentIndex={playback.index}
+          playing={playback.playing}
+          emptyText="Nothing queued. Add a song to get started."
+          detail={(song) => `added by ${song.addedBy}`}
+          editable={canEdit}
+          onJump={(queueId) => {
+            setPlaybackError("");
+            void send({ type: "jump", queueId });
+          }}
+          onRemove={(queueId) => void send({ type: "remove", queueId })}
+          onMove={(queueId, afterQueueId) =>
+            void send({ type: "move", queueId, afterQueueId })
+          }
         />
-      )}
+      </SidePanel>
+
+      {footerSlot &&
+        current &&
+        createPortal(
+          <PlayerBar
+            song={current}
+            status={playerStatus}
+            currentTime={player.currentTime}
+            duration={player.duration}
+            volume={player.volume}
+            muted={player.muted}
+            resumePending={autoplayBlocked}
+            hasPrevious={playback.index > 0}
+            hasNext={playback.index < queue.length - 1}
+            onTogglePlay={handleTogglePlay}
+            onPrevious={handlePrevious}
+            onNext={() => void send({ type: "next", from: current.queueId })}
+            onSeek={handleSeek}
+            onVolumeChange={player.setVolume}
+            onToggleMute={player.toggleMute}
+            onOpenQueue={() => setPanelOpen(true)}
+          />,
+          footerSlot
+        )}
+    </>
+  );
+}
+
+function CenteredState({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
+      <Empty className="max-w-md border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">{icon}</EmptyMedia>
+          <EmptyTitle>{title}</EmptyTitle>
+          <EmptyDescription>{description}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <StartRoomLink />
+        </EmptyContent>
+      </Empty>
     </div>
   );
 }
 
 export function RoomSkeleton() {
   return (
-    <div className="flex flex-1 justify-center bg-muted/40">
-      <div className="flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-8 sm:py-14">
-        <div className="flex flex-col gap-2">
+    <>
+      <PageMain>
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-6 w-48" />
         </div>
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <Skeleton className="h-64 lg:order-last" />
-          <Skeleton className="h-96" />
-        </div>
-      </div>
-    </div>
+        <Skeleton className="h-20 rounded-xl" />
+        <SongGridSkeleton />
+      </PageMain>
+      <aside className="hidden w-[22rem] shrink-0 flex-col gap-3 border-l px-4 py-5 xl:flex">
+        <Skeleton className="h-10" />
+        <Skeleton className="h-14" />
+        <Skeleton className="h-14" />
+      </aside>
+    </>
   );
 }

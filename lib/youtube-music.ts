@@ -31,6 +31,7 @@ interface SongLike {
   // Video-type items (common in playlists) list artists here instead.
   authors?: { name: string }[];
   thumbnails?: ThumbnailLike[];
+  duration?: { seconds?: number };
 }
 
 /**
@@ -73,6 +74,7 @@ export function toSongs(
         (artist) => artist.name
       ),
       thumbnail: largeThumbnail(item.thumbnails),
+      ...(item.duration?.seconds ? { duration: item.duration.seconds } : {}),
     });
   }
 

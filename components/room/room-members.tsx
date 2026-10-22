@@ -1,7 +1,6 @@
-import { Crown, Headphones, X } from "lucide-react";
+import { X } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { LivePill, MemberAvatar } from "@/components/rooms/room-cards";
 import { Spinner } from "@/components/ui/spinner";
 import type { RoomMember } from "@/lib/room";
 
@@ -41,48 +40,46 @@ export function RoomMembers({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge className="h-7 gap-1.5 px-3 text-sm">
-        <Headphones />
+      <LivePill className="h-6 px-2.5 text-xs">
         {members.length} listening
-      </Badge>
+      </LivePill>
 
       <ul className="contents">
-        {sorted.map((member) => (
-          <li
-            key={member.id}
-            className="flex h-7 items-center gap-1.5 rounded-full border bg-background py-0.5 pr-1 pl-0.5 text-sm"
-          >
-            <span
-              aria-hidden="true"
-              className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium uppercase"
+        {sorted.map((member) => {
+          const role =
+            member.id === ownerId
+              ? member.id === you
+                ? "Host (you)"
+                : "Host"
+              : member.id === you
+                ? "(you)"
+                : null;
+          return (
+            <li
+              key={member.id}
+              className="flex h-7 items-center gap-2 rounded-full border py-0.5 pr-2.5 pl-1 text-xs font-medium"
             >
-              {member.name.charAt(0)}
-            </span>
-            <span className="max-w-32 truncate">{member.name}</span>
-            {member.id === ownerId && (
-              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                <Crown className="size-3" />
-                Host
-              </span>
-            )}
-            {member.id === you && (
-              <span className="text-xs text-muted-foreground">(you)</span>
-            )}
-            {isHost && member.id !== you ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="rounded-full"
-                aria-label={`Remove ${member.name} from the room`}
-                onClick={() => onRemove(member)}
-              >
-                <X />
-              </Button>
-            ) : (
-              <span className="w-1" />
-            )}
-          </li>
-        ))}
+              <MemberAvatar
+                member={member}
+                className="size-5 border-0 text-[10px]"
+              />
+              <span className="max-w-32 truncate">{member.name}</span>
+              {role && (
+                <span className="font-normal text-muted-foreground">{role}</span>
+              )}
+              {isHost && member.id !== you && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${member.name} from the room`}
+                  onClick={() => onRemove(member)}
+                  className="-mr-1 flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

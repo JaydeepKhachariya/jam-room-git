@@ -9,6 +9,7 @@ import {
   type RoomPlayback,
   type RoomSnapshot,
 } from "@/lib/room";
+import { moveInQueue } from "@/lib/queue";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /*
@@ -25,7 +26,11 @@ const IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Retries when another instance changed the room at the same moment. */
 const MAX_ATTEMPTS = 5;
 
-const COLUMNS = "id, name, owner_id, queue, playback, finished, banned, version";
+// "*" rather than a column list, so rooms still load before the
+// migration adding `open` has been run (it then reads as undefined).
+const COLUMNS = "*";
+/** Room summaries asked for at once, e.g. for "Your rooms". */
+const MAX_SUMMARIES = 50;
 
 interface RoomRow {
   id: string;
@@ -38,6 +43,11 @@ interface RoomRow {
   /** Members the host removed; they can't rejoin or act. */
   banned: string[];
   version: number;
+  /**
+   * Whether everyone can change the queue, or only the host. Missing
+   * until supabase/migrations/20261022010000_rooms_open.sql is run.
+   */
+  open?: boolean;
 }
 
 /** The parts of a room that playback actions change. */
@@ -77,6 +87,7 @@ function sharedSnapshot(row: RoomRow): Omit<RoomSnapshot, "you"> {
     queue: row.queue,
     playback: row.playback,
     ownerId: row.owner_id,
+    open: row.open !== false,
     version: row.version,
     serverTime: Date.now(),
   };
@@ -112,7 +123,20 @@ async function broadcast(roomId: string, event: string, payload: object) {
   }
 }
 
-export async function createRoom(name: string, ownerToken: string) {
+/** The database doesn't have the `open` column yet. */
+export class HostOnlyUnavailableError extends Error {
+  constructor() {
+    super(
+      "Host-only rooms need a database update: run supabase/migrations/20261022010000_rooms_open.sql in the Supabase SQL editor."
+    );
+  }
+}
+
+export async function createRoom(
+  name: string,
+  ownerToken: string,
+  open = true
+) {
   const supabase = supabaseAdmin();
 
   // Clean up long-idle rooms as new ones are made.
@@ -133,8 +157,15 @@ export async function createRoom(name: string, ownerToken: string) {
         position: 0,
         updatedAt: Date.now(),
       } satisfies RoomPlayback,
+      // Only sent when off: open is the column's default, so open rooms
+      // can still be made before the migration has been run.
+      ...(open ? {} : { open: false }),
     });
     if (!error) return id;
+    // 42703 / PGRST204: the `open` column doesn't exist yet.
+    if (!open && (error.code === "42703" || error.code === "PGRST204")) {
+      throw new HostOnlyUnavailableError();
+    }
     // 23505: unique violation, i.e. the id is taken. Try another.
     if (error.code !== "23505") throw error;
   }
@@ -162,6 +193,17 @@ export async function applyRoomAction(
     const row = await fetchRoom(id);
     if (!row) return NOT_FOUND;
     if (row.banned.includes(you)) return REMOVED;
+    if (
+      row.open === false &&
+      you !== row.owner_id &&
+      QUEUE_ACTIONS.has(action.type)
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only the host can change the queue in this room.",
+      };
+    }
 
     let next: RoomRow;
     if (action.type === "removeMember") {
@@ -223,6 +265,63 @@ export async function applyRoomAction(
   };
 }
 
+/** What only the host can do in a host-only room. */
+const QUEUE_ACTIONS = new Set<RoomAction["type"]>([
+  "add",
+  "remove",
+  "move",
+  "jump",
+]);
+
+/** A room as listed in "Your rooms": what's on, without the queue. */
+export interface RoomSummary {
+  id: string;
+  name: string;
+  ownerId: string;
+  current: Pick<QueuedSong, "id" | "title" | "artists" | "thumbnail"> | null;
+  playing: boolean;
+}
+
+/**
+ * Summaries of the rooms `ids` that still exist and haven't removed the
+ * caller. Rooms are only ever looked up by id: there's no public list.
+ */
+export async function getRoomSummaries(
+  ids: string[],
+  token: string
+): Promise<RoomSummary[]> {
+  const unique = [...new Set(ids)].slice(0, MAX_SUMMARIES);
+  if (unique.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin()
+    .from("rooms")
+    .select(COLUMNS)
+    .in("id", unique)
+    .returns<RoomRow[]>();
+  if (error) throw error;
+
+  const you = memberIdFor(token);
+  return data
+    .filter((row) => !row.banned.includes(you))
+    .map((row) => {
+      const song = row.queue[row.playback.index];
+      return {
+        id: row.id,
+        name: row.name,
+        ownerId: row.owner_id,
+        current: song
+          ? {
+              id: song.id,
+              title: song.title,
+              artists: song.artists,
+              thumbnail: song.thumbnail,
+            }
+          : null,
+        playing: row.playback.playing && !row.finished,
+      };
+    });
+}
+
 function setPlayback(
   state: RoomState,
   next: Pick<RoomPlayback, "index" | "playing" | "position">
@@ -276,6 +375,21 @@ function reduce(
           playing: hasNext && playback.playing,
           position: 0,
         });
+      }
+      return true;
+    }
+
+    case "move": {
+      const moved = moveInQueue(queue, action.queueId, action.afterQueueId);
+      if (!moved) return false;
+      state.queue = moved;
+      // Keep the current song playing, wherever it ends up; its position
+      // is untouched, so listeners don't skip.
+      if (current) {
+        state.playback = {
+          ...playback,
+          index: moved.findIndex((song) => song.queueId === current.queueId),
+        };
       }
       return true;
     }

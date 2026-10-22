@@ -10,6 +10,7 @@ import {
   type RoomMember,
   type RoomSnapshot,
 } from "@/lib/room";
+import { membersFrom, type PresenceInfo } from "@/lib/room-presence";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 /** Wait before double-checking a 404, in case it was a fluke. */
@@ -22,24 +23,6 @@ const CLOCK_SAMPLES_KEPT = 10;
  * keeps the clock estimate fresh.
  */
 const REFRESH_MS = 20_000;
-
-/** What each tab shares with Realtime Presence. */
-interface PresenceInfo {
-  name: string;
-  joinedAt: number;
-}
-
-/** One entry per person, however many tabs they have open. */
-function membersFrom(state: Record<string, PresenceInfo[]>): RoomMember[] {
-  return Object.entries(state)
-    .filter(([, tabs]) => tabs.length > 0)
-    .map(([id, tabs]) => ({
-      id,
-      name: tabs[tabs.length - 1].name,
-      joinedAt: Math.min(...tabs.map((tab) => tab.joinedAt)),
-    }))
-    .sort((a, b) => a.joinedAt - b.joinedAt);
-}
 
 class RoomGoneError extends Error {}
 class RemovedFromRoomError extends Error {}

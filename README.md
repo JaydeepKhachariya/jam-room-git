@@ -10,8 +10,13 @@ Rooms are stored in [Supabase](https://supabase.com), so they work
 across the many server instances Vercel runs.
 
 1. Create a Supabase project.
-2. In the SQL editor, run
-   [`supabase/migrations/20261022000000_rooms.sql`](supabase/migrations/20261022000000_rooms.sql).
+2. In the SQL editor, run each file in `supabase/migrations/`, oldest
+   first:
+   [`20261022000000_rooms.sql`](supabase/migrations/20261022000000_rooms.sql)
+   creates the rooms table, and
+   [`20261022010000_rooms_open.sql`](supabase/migrations/20261022010000_rooms_open.sql)
+   adds host-only rooms ("Let everyone add songs" off). Until the second
+   one is run, rooms work but can't be made host-only.
 3. Under **Realtime → Settings**, make sure public channels are allowed
    (public access on, not "private channels only"). Rooms use public
    Broadcast and Presence channels named `room:<id>`.

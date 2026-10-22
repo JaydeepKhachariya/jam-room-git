@@ -1,4 +1,4 @@
-import { isSong, type Song } from "@/lib/song";
+import { isDuration, isSong, type Song } from "@/lib/song";
 
 export const ROOM_NAME_MAX = 60;
 export const MEMBER_NAME_MAX = 40;
@@ -54,6 +54,8 @@ export interface RoomSnapshot {
   playback: RoomPlayback;
   /** Member id of the room's creator, who can remove people. */
   ownerId: string;
+  /** Everyone can change the queue; when false, only the host can. */
+  open: boolean;
   /** Member id of whoever this snapshot was sent to. */
   you: string;
   /** Increments on every change, so stale updates can be ignored. */
@@ -70,6 +72,8 @@ export type RoomAction =
   | { type: "add"; song: Song; addedBy: string }
   | { type: "remove"; queueId: string }
   | { type: "jump"; queueId: string }
+  /** Puts the entry just after `afterQueueId`, or first when null. */
+  | { type: "move"; queueId: string; afterQueueId: string | null }
   | { type: "play" }
   | { type: "pause" }
   | { type: "seek"; position: number }
@@ -117,6 +121,7 @@ function cleanSong(value: unknown): Song | null {
     title: value.title.slice(0, 300),
     artists: value.artists.slice(0, 10).map((artist) => artist.slice(0, 200)),
     thumbnail,
+    ...(isDuration(value.duration) ? { duration: value.duration } : {}),
   };
 }
 
@@ -139,6 +144,15 @@ export function parseRoomAction(value: unknown): RoomAction | null {
     case "jump":
       return isId(action.queueId)
         ? { type: action.type, queueId: action.queueId }
+        : null;
+    case "move":
+      return isId(action.queueId) &&
+        (action.afterQueueId === null || isId(action.afterQueueId))
+        ? {
+            type: "move",
+            queueId: action.queueId,
+            afterQueueId: action.afterQueueId,
+          }
         : null;
     case "play":
     case "pause":

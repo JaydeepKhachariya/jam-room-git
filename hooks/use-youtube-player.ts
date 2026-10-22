@@ -48,6 +48,7 @@ declare global {
 }
 
 const PLAYER_STATE = {
+  UNSTARTED: -1,
   ENDED: 0,
   PLAYING: 1,
   PAUSED: 2,
@@ -141,6 +142,10 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   // The iframe only reports its time every ~250ms; remember when the
   // reported value last changed so reads in between can extrapolate.
   const reportedRef = useRef({ time: -1, at: 0 });
+  // Whether we last asked the player to play or to stay paused. It
+  // buffers either way (seeking, cueing), but only buffering towards
+  // playback is "loading".
+  const wantPlayingRef = useRef(false);
 
   useEffect(() => {
     callbacksRef.current = { onEnded, onError };
@@ -176,6 +181,11 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
               },
               onStateChange: ({ data }) => {
                 if (data === PLAYER_STATE.PLAYING) {
+                  // A pause sent while it was buffering didn't take.
+                  if (!wantPlayingRef.current) {
+                    player.pauseVideo();
+                    return;
+                  }
                   window.clearTimeout(autoplayTimerRef.current);
                   setAutoplayBlocked(false);
                   setStatus("playing");
@@ -185,7 +195,10 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
                   setCurrentTime(positionRef.current);
                   setStatus("paused");
                 } else if (data === PLAYER_STATE.BUFFERING) {
-                  setStatus("loading");
+                  setStatus(wantPlayingRef.current ? "loading" : "paused");
+                } else if (data === PLAYER_STATE.UNSTARTED) {
+                  // Reported mid-load too, so only final once paused.
+                  if (!wantPlayingRef.current) setStatus("paused");
                 } else if (data === PLAYER_STATE.CUED) {
                   setStatus("paused");
                 } else if (data === PLAYER_STATE.ENDED) {
@@ -265,6 +278,7 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
       }: LoadOptions = {}
     ) => {
       window.clearTimeout(autoplayTimerRef.current);
+      wantPlayingRef.current = autoplay;
       setAutoplayBlocked(false);
       setStatus(autoplay ? "loading" : "paused");
       positionRef.current = startSeconds;
@@ -289,7 +303,9 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
 
       if (mayBeBlocked) {
         autoplayTimerRef.current = window.setTimeout(() => {
-          if (statusRef.current === "playing") return;
+          if (statusRef.current === "playing" || !wantPlayingRef.current) {
+            return;
+          }
           setAutoplayBlocked(true);
           setStatus("paused");
         }, AUTOPLAY_CHECK_MS);
@@ -298,26 +314,43 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     []
   );
 
+  /** Start playback if it isn't already running. */
+  const resume = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    wantPlayingRef.current = true;
+    player.playVideo();
+  }, []);
+
+  const pause = useCallback(() => {
+    const player = playerRef.current;
+    wantPlayingRef.current = false;
+    // Paused on purpose, so it isn't waiting on autoplay any more.
+    window.clearTimeout(autoplayTimerRef.current);
+    setAutoplayBlocked(false);
+    if (!player) return;
+
+    player.pauseVideo();
+    // Paused while buffering (loading, or after a seek), the player
+    // stops without reporting it, which would leave it "loading".
+    if (statusRef.current === "playing" || statusRef.current === "loading") {
+      positionRef.current = player.getCurrentTime();
+      setCurrentTime(positionRef.current);
+      setStatus("paused");
+    }
+  }, []);
+
   const togglePlay = useCallback(() => {
     const player = playerRef.current;
     if (!player) return;
 
     if (status === "playing" || status === "loading") {
-      player.pauseVideo();
+      pause();
     } else {
       if (status === "ended") player.seekTo(0, true);
-      player.playVideo();
+      resume();
     }
-  }, [status]);
-
-  /** Start playback if it isn't already running. */
-  const resume = useCallback(() => {
-    playerRef.current?.playVideo();
-  }, []);
-
-  const pause = useCallback(() => {
-    playerRef.current?.pauseVideo();
-  }, []);
+  }, [status, pause, resume]);
 
   /**
    * The position as precisely as it's known: while playing, the player's
@@ -367,6 +400,7 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   }, [setMuted]);
 
   const stop = useCallback(() => {
+    wantPlayingRef.current = false;
     playerRef.current?.stopVideo();
     setStatus("idle");
     positionRef.current = 0;

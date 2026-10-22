@@ -5,21 +5,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Users } from "lucide-react";
 
+import { FormCard, SwitchField, TextField } from "@/components/form-card";
+import { Logo } from "@/components/shell/sidebar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { saveDisplayName, useDisplayName } from "@/hooks/use-display-name";
 import { getClientToken } from "@/lib/client-token";
+import { rememberRoom } from "@/lib/my-rooms";
 import { CLIENT_HEADER, MEMBER_NAME_MAX, ROOM_NAME_MAX } from "@/lib/room";
+
+const STEPS = [
+  {
+    title: "Create the room.",
+    body: "You're the host and can remove people.",
+  },
+  {
+    title: "Share the invite link.",
+    body: "Friends join in one click, no account needed.",
+  },
+  {
+    title: "Add songs together.",
+    body: "Everything joins one queue that plays in sync.",
+  },
+];
 
 export default function NewRoomPage() {
   const router = useRouter();
@@ -27,11 +34,12 @@ export default function NewRoomPage() {
   // Null until edited, so the saved name can fill in after hydration.
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
+  const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
   const name = nameInput ?? savedName ?? "";
-  const defaultRoomName = name.trim() ? `${name.trim()}'s room` : "Jam Room";
+  const defaultRoomName = `${name.trim() || "Your"}'s room`;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,6 +49,7 @@ export default function NewRoomPage() {
     setError("");
 
     try {
+      const finalName = roomName.trim() || defaultRoomName;
       const response = await fetch("/api/rooms", {
         method: "POST",
         headers: {
@@ -48,7 +57,7 @@ export default function NewRoomPage() {
           // Makes this browser the room's host.
           [CLIENT_HEADER]: getClientToken(),
         },
-        body: JSON.stringify({ name: roomName.trim() || defaultRoomName }),
+        body: JSON.stringify({ name: finalName, open }),
       });
       const data: { id?: string; error?: string } = await response.json();
       if (!response.ok || !data.id) {
@@ -56,6 +65,7 @@ export default function NewRoomPage() {
       }
 
       saveDisplayName(name.trim());
+      rememberRoom(data.id, finalName);
       router.push(`/rooms/${data.id}`);
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "Something went wrong.");
@@ -64,76 +74,82 @@ export default function NewRoomPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-muted/40 px-4 py-10">
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          nativeButton={false}
-          render={<Link href="/" />}
+    <div className="flex min-h-svh flex-col">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b px-6">
+        <Logo />
+        <Link
+          href="/"
+          className="inline-flex h-9 items-center gap-2 rounded-lg px-3 font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          <ArrowLeft data-icon="inline-start" />
-          Back
-        </Button>
+          <ArrowLeft className="size-4" />
+          Back to home
+        </Link>
+      </header>
 
-        <Card>
-          <form onSubmit={handleSubmit} className="contents">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="size-4" />
-                Start a room
-              </CardTitle>
-              <CardDescription>
-                Share the link and everyone in the room hears the same song
-                at the same time.
-              </CardDescription>
-            </CardHeader>
+      <main className="flex flex-1 justify-center px-6 py-14">
+        <div className="flex w-full max-w-md flex-col gap-6">
+          <FormCard
+            icon={<Users className="size-4" />}
+            title="Start a room"
+            description="Share the link and everyone in the room hears the same song at the same time."
+            onSubmit={handleSubmit}
+            submitLabel={creating ? "Creating room" : "Create room"}
+            submitDisabled={!name.trim()}
+            pending={creating}
+            cancelHref="/"
+          >
+            <TextField
+              id="name"
+              label="Your name"
+              hint="Shown to everyone in the room."
+              value={name}
+              onChange={setNameInput}
+              placeholder="Enter your name"
+              maxLength={MEMBER_NAME_MAX}
+              autoComplete="nickname"
+              required
+            />
+            <TextField
+              id="room"
+              label="Room name"
+              optional
+              value={roomName}
+              onChange={setRoomName}
+              placeholder={defaultRoomName}
+              maxLength={ROOM_NAME_MAX}
+              autoComplete="off"
+            />
+            <SwitchField
+              label="Let everyone add songs"
+              description="Turn off to keep the queue host-only."
+              checked={open}
+              onChange={setOpen}
+            />
 
-            <CardContent className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Your name
-                <Input
-                  value={name}
-                  onChange={(event) => setNameInput(event.target.value)}
-                  placeholder="How others see you"
-                  maxLength={MEMBER_NAME_MAX}
-                  autoComplete="nickname"
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Room name
-                <Input
-                  value={roomName}
-                  onChange={(event) => setRoomName(event.target.value)}
-                  placeholder={defaultRoomName}
-                  maxLength={ROOM_NAME_MAX}
-                />
-              </label>
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>Couldn&apos;t create the room</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </FormCard>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle />
-                  <AlertTitle>Couldn&apos;t create the room</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-
-            <CardFooter>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={creating || !name.trim()}
-              >
-                {creating && <Spinner data-icon="inline-start" />}
-                {creating ? "Creating room" : "Create room"}
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
-      </div>
+          <ol className="flex flex-col gap-3 px-1">
+            {STEPS.map((step, index) => (
+              <li key={step.title} className="flex items-start gap-3">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium text-muted-foreground">
+                  {index + 1}
+                </span>
+                <span className="leading-normal text-muted-foreground">
+                  <span className="font-medium text-foreground">{step.title}</span>{" "}
+                  {step.body}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </main>
     </div>
   );
 }
