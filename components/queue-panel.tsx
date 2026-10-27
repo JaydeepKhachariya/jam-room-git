@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties } from "react";
+import { memo, useId, useMemo, useState, type CSSProperties } from "react";
 import {
   closestCenter,
   DndContext,
@@ -28,6 +28,9 @@ import { SongThumbnail } from "@/components/song-thumbnail";
 import { formatTime } from "@/lib/format";
 import type { QueueEntry } from "@/lib/queue";
 import { cn } from "@/lib/utils";
+
+// Created once: a new array each render would re-render every row.
+const DRAG_MODIFIERS = [restrictToVerticalAxis, restrictToFirstScrollableAncestor];
 
 interface QueueListProps<T extends QueueEntry> {
   queue: T[];
@@ -74,6 +77,8 @@ export function QueueList<T extends QueueEntry>({
   );
   const shown = dropped?.base === queue ? dropped.order : queue;
 
+  const itemIds = useMemo(() => shown.map((entry) => entry.queueId), [shown]);
+
   const currentQueueId = queue[currentIndex]?.queueId;
   const shownCurrentIndex = shown.findIndex(
     (entry) => entry.queueId === currentQueueId
@@ -111,7 +116,7 @@ export function QueueList<T extends QueueEntry>({
       id={dndId}
       sensors={sensors}
       collisionDetection={closestCenter}
-      modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+      modifiers={DRAG_MODIFIERS}
       onDragEnd={handleDragEnd}
       accessibility={{
         announcements: {
@@ -130,7 +135,7 @@ export function QueueList<T extends QueueEntry>({
       }}
     >
       <SortableContext
-        items={shown.map((entry) => entry.queueId)}
+        items={itemIds}
         strategy={verticalListSortingStrategy}
         disabled={!editable}
       >
@@ -154,7 +159,7 @@ export function QueueList<T extends QueueEntry>({
   );
 }
 
-function QueueRow({
+const QueueRow = memo(function QueueRow({
   entry,
   isCurrent,
   played,
@@ -263,4 +268,4 @@ function QueueRow({
       )}
     </li>
   );
-}
+});

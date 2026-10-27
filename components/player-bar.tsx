@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Heart,
   ListMusic,
@@ -54,6 +55,8 @@ interface PlayerBarProps {
   onCycleRepeat?: () => void;
   /** Opens the queue on screens too narrow for the side panel. */
   onOpenQueue?: () => void;
+  /** Where the artwork and title link to, for the song's details. */
+  detailsHref?: string;
 }
 
 function IconButton({
@@ -72,6 +75,31 @@ function IconButton({
       )}
       {...props}
     />
+  );
+}
+
+/** The artwork and title; a link to the song's details when given one. */
+function NowPlayingInfo({
+  href,
+  children,
+}: {
+  href?: string;
+  children: React.ReactNode;
+}) {
+  const className = "flex min-w-0 flex-1 items-center gap-3";
+  if (!href) return <span className={className}>{children}</span>;
+
+  return (
+    <Link
+      href={href}
+      title="Open now playing"
+      className={cn(
+        className,
+        "group rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -98,6 +126,7 @@ export function PlayerBar({
   repeat = "off",
   onCycleRepeat,
   onOpenQueue,
+  detailsHref,
 }: PlayerBarProps) {
   // While the seek bar is dragged, show where it's going and seek once
   // on release, rather than on every step of the drag.
@@ -145,19 +174,28 @@ export function PlayerBar({
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         {/* Now playing */}
         <div className="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
-          <span className="size-12 shrink-0 overflow-hidden rounded-lg bg-muted">
-            <SongThumbnail
-              src={song.thumbnail}
-              label={song.title}
-              iconClassName="text-xl"
-            />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate font-medium">{song.title}</span>
-            <span className="truncate text-xs text-muted-foreground">
-              {artists}
+          <NowPlayingInfo href={detailsHref}>
+            <span className="size-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+              <SongThumbnail
+                src={song.thumbnail}
+                label={song.title}
+                iconClassName="text-xl"
+              />
             </span>
-          </span>
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span
+                className={cn(
+                  "truncate font-medium",
+                  detailsHref && "group-hover:underline"
+                )}
+              >
+                {song.title}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {artists}
+              </span>
+            </span>
+          </NowPlayingInfo>
           {onToggleLike && (
             <IconButton
               aria-label={liked ? "Remove from Library" : "Save to Library"}

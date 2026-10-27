@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Check, ListPlus, Pause, Play, Plus } from "lucide-react";
 
 import { SongThumbnail } from "@/components/song-thumbnail";
@@ -21,7 +22,7 @@ interface SongCardProps {
   onAddToQueue?: () => void;
 }
 
-export function SongCard({
+export const SongCard = memo(function SongCard({
   song,
   isCurrent,
   playing = false,
@@ -45,7 +46,9 @@ export function SongCard({
   return (
     <div
       className={cn(
-        "group/song relative flex min-w-0 flex-col gap-3 rounded-xl border p-3 transition-colors",
+        // Skip layout and paint for cards scrolled out of view: long
+        // lists stay smooth. The size is remembered once rendered.
+        "group/song relative flex min-w-0 [contain-intrinsic-size:auto_17rem] flex-col gap-3 rounded-xl border p-3 transition-colors [content-visibility:auto]",
         isCurrent
           ? "border-zinc-600 bg-secondary"
           : "border-border bg-card hover:bg-secondary/60"
@@ -130,7 +133,7 @@ export function SongCard({
       )}
     </div>
   );
-}
+});
 
 export function SongCardSkeleton() {
   return (
