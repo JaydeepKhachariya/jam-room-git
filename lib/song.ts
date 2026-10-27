@@ -7,12 +7,16 @@ export interface Song {
   duration?: number;
 }
 
+/** YouTube video IDs are exactly 11 URL-safe characters. */
+export function isVideoId(value: unknown): value is string {
+  return typeof value === "string" && /^[\w-]{11}$/.test(value);
+}
+
 export function isSong(value: unknown): value is Song {
   if (!value || typeof value !== "object") return false;
   const song = value as Record<string, unknown>;
   return (
-    typeof song.id === "string" &&
-    song.id.length > 0 &&
+    isVideoId(song.id) &&
     typeof song.title === "string" &&
     Array.isArray(song.artists) &&
     song.artists.every((artist) => typeof artist === "string") &&

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Music, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
+import { LogoMark } from "@/components/logo-mark";
 import { roomStatus } from "@/components/rooms/room-cards";
 import { usePlayerShell } from "@/components/player/player-provider";
 import { NavLinks } from "@/components/shell/nav-links";
@@ -22,9 +23,7 @@ export function Logo({ className }: { className?: string }) {
         className
       )}
     >
-      <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-        <Music className="size-[18px]" />
-      </span>
+      <LogoMark />
       <span className="text-base font-semibold tracking-tight">Jam Rooms</span>
     </Link>
   );

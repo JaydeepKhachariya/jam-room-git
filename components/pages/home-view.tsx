@@ -15,6 +15,7 @@ import { PersonalPanel } from "@/components/shell/personal-panel";
 import { useRoomsDirectory } from "@/components/shell/rooms-directory";
 import { SongFeedGrid } from "@/components/song-grid";
 import { useSongFeed } from "@/hooks/use-song-feed";
+import { suggestionsUrl } from "@/lib/interests";
 import { cn } from "@/lib/utils";
 
 /** Each chip is a song search; "All" is the suggestions feed. */
@@ -46,11 +47,13 @@ export function HomeView() {
     () => "Welcome back"
   );
 
+  // Suggestions follow what you have been playing; fixed while the page is open.
+  const [forYouUrl] = useState(() => suggestionsUrl());
   const [chip, setChip] = useState<ChipLabel>("All");
   const query = CHIPS.find((entry) => entry.label === chip)?.query ?? null;
   const feedUrl = query
     ? `/api/search?q=${encodeURIComponent(query)}`
-    : "/api/suggestions";
+    : forYouUrl;
   const feed = useSongFeed(feedUrl);
 
   return (

@@ -1,11 +1,20 @@
 import { songFeedResponse } from '@/lib/song-feed';
-import { suggestedSongs } from '@/lib/youtube-music';
+import { isVideoId } from '@/lib/song';
+import { relatedSongs, suggestedSongs } from '@/lib/youtube-music';
 
 export async function GET(request: Request) {
-  const cursor = new URL(request.url).searchParams.get('cursor');
+  const { searchParams } = new URL(request.url);
+  const cursor = searchParams.get('cursor');
+  const seeds = (searchParams.get('seeds') ?? '').split(',').filter(isVideoId);
 
-  return songFeedResponse(cursor, suggestedSongs, {
-    label: 'suggestions',
-    errorMessage: 'Suggestions are temporarily unavailable.',
-  });
+  // With a listening history, suggest songs like what was played;
+  // otherwise fall back to the generic home feed.
+  return songFeedResponse(
+    cursor,
+    () => (seeds.length > 0 ? relatedSongs(seeds) : suggestedSongs()),
+    {
+      label: 'suggestions',
+      errorMessage: 'Suggestions are temporarily unavailable.',
+    }
+  );
 }
