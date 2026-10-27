@@ -14,6 +14,8 @@ const liked = createLocalStore<Song[]>(
   []
 );
 
+export const readLikedSongs = () => liked.read();
+
 export function useLikedSongs() {
   const songs = liked.useValue();
   const ids = useMemo(() => new Set(songs.map((song) => song.id)), [songs]);

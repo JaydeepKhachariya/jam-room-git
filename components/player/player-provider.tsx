@@ -21,7 +21,8 @@ import {
   type RepeatMode,
 } from "@/lib/playback-session";
 import { moveInQueue, toLocalEntry, type LocalQueueEntry } from "@/lib/queue";
-import type { Song } from "@/lib/song";
+import { recordPlay } from "@/lib/interests";
+import { isSong, type Song } from "@/lib/song";
 
 /** Keeps the saved session small when a long list follows a pick. */
 const MAX_QUEUE = 200;
@@ -225,6 +226,36 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   useResumeOnGesture(autoplayBlocked && !roomActive, resume);
 
+  // Keep the queue stocked with songs like the current one, so playback
+  // carries on in the same vein instead of stopping or wandering.
+  const filledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!current || roomActive) return;
+    if (queueIndex < queue.length - 2) return;
+    if (filledRef.current === current.queueId) return;
+    filledRef.current = current.queueId;
+
+    const seed = current.queueId;
+    fetch(`/api/radio?id=${encodeURIComponent(current.id)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { results?: unknown[] } | null) => {
+        const related = (data?.results ?? []).filter(isSong);
+        if (related.length === 0) return;
+
+        setQueue((prev) => {
+          // The queue was replaced while this loaded: these are stale.
+          if (!prev.some((entry) => entry.queueId === seed)) return prev;
+          const known = new Set(prev.map((entry) => entry.id));
+          let added = related
+            .filter((song) => !known.has(song.id))
+            .map((song) => toLocalEntry(song));
+          if (shuffle) added = shuffled(added);
+          return [...prev, ...added].slice(0, MAX_QUEUE);
+        });
+      })
+      .catch(() => {});
+  }, [current, roomActive, queue.length, queueIndex, shuffle]);
+
   function playAt(
     nextQueue: LocalQueueEntry[],
     index: number,
@@ -235,6 +266,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setQueue(nextQueue);
     setQueueIndex(index);
     setError("");
+    recordPlay(song);
     void load(song.id, { autoplay, duration: song.duration });
   }
 
@@ -257,14 +289,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Songs added with "Add to queue" stay up next.
+    // Songs added with "Add to queue" stay up next; after them the queue
+    // fills with songs like this one (see the effect above), rather than
+    // whatever happened to come next in the list it was picked from.
     const added = queue.slice(queueIndex + 1).filter((entry) => entry.manual);
-    let following = songs
-      .slice(index + 1)
-      .slice(0, MAX_QUEUE - 1 - added.length)
-      .map((next) => toLocalEntry(next));
-    if (shuffle) following = shuffled(following);
-    playAt([toLocalEntry(song), ...added, ...following], 0);
+    playAt([toLocalEntry(song), ...added], 0);
   }
 
   /** Lines a song up after the current one and anything added before it. */

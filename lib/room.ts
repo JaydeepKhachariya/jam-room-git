@@ -109,7 +109,7 @@ export function cleanName(value: unknown, max: number) {
 }
 
 function cleanSong(value: unknown): Song | null {
-  if (!isSong(value) || !/^[\w-]{1,64}$/.test(value.id)) return null;
+  if (!isSong(value)) return null;
 
   const thumbnail =
     value.thumbnail && /^https:\/\//.test(value.thumbnail)

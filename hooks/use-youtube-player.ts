@@ -146,6 +146,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
   // buffers either way (seeking, cueing), but only buffering towards
   // playback is "loading".
   const wantPlayingRef = useRef(false);
+  // Until when buffering is expected (a correction seek) and not worth showing.
+  const quietUntilRef = useRef(0);
 
   useEffect(() => {
     callbacksRef.current = { onEnded, onError };
@@ -159,7 +161,7 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     const host = document.createElement("div");
     host.setAttribute("aria-hidden", "true");
     host.style.cssText =
-      "position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;pointer-events:none;";
+      "position:fixed;left:-10000px;top:0;width:200px;height:200px;overflow:hidden;opacity:0;pointer-events:none;";
     const mount = document.createElement("div");
     host.appendChild(mount);
     document.body.appendChild(host);
@@ -170,8 +172,10 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
       (YT) =>
         new Promise<YTPlayer>((resolve) => {
           const player = new YT.Player(mount, {
-            height: 1,
-            width: 1,
+            // The IFrame API asks for at least 200x200; smaller players can
+            // stall and drop quality. It is hidden off-screen regardless.
+            height: 200,
+            width: 200,
             playerVars: { autoplay: 1, controls: 0, playsinline: 1 },
             events: {
               onReady: () => {
@@ -195,6 +199,9 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
                   setCurrentTime(positionRef.current);
                   setStatus("paused");
                 } else if (data === PLAYER_STATE.BUFFERING) {
+                  // A correction seek buffers briefly; keep it looking like
+                  // playback rather than flashing the loading spinner.
+                  if (performance.now() < quietUntilRef.current) return;
                   setStatus(wantPlayingRef.current ? "loading" : "paused");
                 } else if (data === PLAYER_STATE.UNSTARTED) {
                   // Reported mid-load too, so only final once paused.
@@ -278,6 +285,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
       }: LoadOptions = {}
     ) => {
       window.clearTimeout(autoplayTimerRef.current);
+      // YouTube rejects NaN/negative start times as an "invalid ID" error.
+      if (!Number.isFinite(startSeconds) || startSeconds < 0) startSeconds = 0;
       wantPlayingRef.current = autoplay;
       setAutoplayBlocked(false);
       setStatus(autoplay ? "loading" : "paused");
@@ -368,7 +377,8 @@ export function useYouTubePlayer({ onEnded, onError }: UseYouTubePlayerOptions =
     return time + Math.min(performance.now() - reported.at, 1000) / 1000;
   }, []);
 
-  const seek = useCallback((seconds: number) => {
+  const seek = useCallback((seconds: number, { quiet = false } = {}) => {
+    if (quiet) quietUntilRef.current = performance.now() + 3000;
     playerRef.current?.seekTo(seconds, true);
     positionRef.current = seconds;
     setCurrentTime(seconds);

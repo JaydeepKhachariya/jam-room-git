@@ -42,16 +42,17 @@ import { useResumeOnGesture } from "@/hooks/use-resume-on-gesture";
 import { useRoom } from "@/hooks/use-room";
 import { useSongFeed } from "@/hooks/use-song-feed";
 import { useYouTubePlayer } from "@/hooks/use-youtube-player";
+import { suggestionsUrl } from "@/lib/interests";
 import { forgetRooms, rememberRoom } from "@/lib/my-rooms";
 import { playbackPosition, type RoomMember } from "@/lib/room";
 
 /** How far a playing listener may drift from the room before correcting. */
-const DRIFT_TOLERANCE_S = 0.35;
+const DRIFT_TOLERANCE_S = 0.8;
 /** Paused players are re-cued, which is slower, so allow a little more. */
 const PAUSED_TOLERANCE_S = 0.5;
 const SYNC_INTERVAL_MS = 1000;
 /** After a correction, let playback settle before judging it again. */
-const SETTLE_MS = 2500;
+const SETTLE_MS = 4000;
 /**
  * A seek takes a moment to buffer, so a player lands behind where it
  * was sent. Corrections aim ahead by a lead learned from how each one
@@ -116,6 +117,9 @@ export function RoomView({ roomId }: { roomId: string }) {
    * the seek lead from how the correction landed. */
   const correctionRef = useRef({ at: 0, learn: false });
   const seekLeadRef = useRef(INITIAL_SEEK_LEAD_S);
+  /** Consecutive checks that found this listener drifted. One stray
+   * reading (a stall, a coarse clock tick) isn't worth a seek. */
+  const driftChecksRef = useRef(0);
 
   // The player follows the room: load what the room is playing, at the
   // position it's at, and correct the player if it drifts.
@@ -157,7 +161,9 @@ export function RoomView({ roomId }: { roomId: string }) {
     /** Seeks to where the room will be once the seek has buffered. */
     function correct() {
       correctionRef.current = { at: Date.now(), learn: true };
-      seek(expected + seekLeadRef.current);
+      driftChecksRef.current = 0;
+      // Quiet: a correction shouldn't flash the loading spinner.
+      seek(expected + seekLeadRef.current, { quiet: true });
     }
 
     // Positive when this listener is ahead of the room.
@@ -183,7 +189,11 @@ export function RoomView({ roomId }: { roomId: string }) {
           Math.max(0, seekLeadRef.current - drift)
         );
       }
-      if (Math.abs(drift) > DRIFT_TOLERANCE_S) correct();
+      if (Math.abs(drift) <= DRIFT_TOLERANCE_S) {
+        driftChecksRef.current = 0;
+      } else if (++driftChecksRef.current >= 2) {
+        correct();
+      }
       return;
     }
 
@@ -250,8 +260,9 @@ export function RoomView({ roomId }: { roomId: string }) {
 
   // Song search; suggestions until something is searched.
   const [search, setSearch] = useState<string | null>(null);
+  const [forYouUrl] = useState(() => suggestionsUrl());
   const feed = useSongFeed(
-    search ? `/api/search?q=${encodeURIComponent(search)}` : "/api/suggestions"
+    search ? `/api/search?q=${encodeURIComponent(search)}` : forYouUrl
   );
 
   if (status === "removed") {
