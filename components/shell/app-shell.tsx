@@ -78,6 +78,7 @@ function PersonalPlayerBar() {
       repeat={player.repeat}
       onCycleRepeat={player.cycleRepeat}
       onOpenQueue={() => setPanelOpen(true)}
+      detailsHref="/now-playing"
     />
   );
 }

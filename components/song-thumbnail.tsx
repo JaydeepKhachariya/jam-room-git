@@ -75,6 +75,7 @@ export function SongThumbnail({
       src={src}
       alt=""
       loading={loading}
+      decoding="async"
       onError={() => setFailedSrc(src)}
       className={cn("size-full object-cover", className)}
     />

@@ -1,14 +1,22 @@
 "use client";
 
+import { memo, useCallback } from "react";
 import { AlertCircle } from "lucide-react";
 
-import { usePlayer } from "@/components/player/player-provider";
+import {
+  useNowPlaying,
+  usePlayer,
+  usePlayerActions,
+} from "@/components/player/player-provider";
 import { SongCard } from "@/components/song-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { Song } from "@/lib/song";
 
-/** A song card that plays through your own player. */
-export function PlayableSongCard({
+/**
+ * A song card that plays through your own player. Memoized, and it only
+ * reads what it needs, so a long list doesn't re-render as music plays.
+ */
+export const PlayableSongCard = memo(function PlayableSongCard({
   song,
   index,
   songs,
@@ -17,18 +25,26 @@ export function PlayableSongCard({
   index: number;
   songs: Song[];
 }) {
-  const player = usePlayer();
+  const { playFromList, addToQueue } = usePlayerActions();
+  const { currentId, isPlaying } = useNowPlaying();
+  const isCurrent = currentId === song.id;
+
+  const onSelect = useCallback(
+    () => playFromList(songs, index),
+    [playFromList, songs, index]
+  );
+  const onAddToQueue = useCallback(() => addToQueue(song), [addToQueue, song]);
 
   return (
     <SongCard
       song={song}
-      isCurrent={player.current?.id === song.id}
-      playing={player.isPlaying}
-      onSelect={() => player.playFromList(songs, index)}
-      onAddToQueue={() => player.addToQueue(song)}
+      isCurrent={isCurrent}
+      playing={isCurrent && isPlaying}
+      onSelect={onSelect}
+      onAddToQueue={onAddToQueue}
     />
   );
-}
+});
 
 export const renderPlayableSong = (song: Song, index: number, songs: Song[]) => (
   <PlayableSongCard key={song.id} song={song} index={index} songs={songs} />

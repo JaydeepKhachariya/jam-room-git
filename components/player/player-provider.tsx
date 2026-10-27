@@ -18,6 +18,7 @@ import {
 import {
   readPlaybackSession,
   writePlaybackSession,
+  type PlaybackSession,
   type RepeatMode,
 } from "@/lib/playback-session";
 import { moveInQueue, toLocalEntry, type LocalQueueEntry } from "@/lib/queue";
@@ -26,6 +27,8 @@ import { isSong, type Song } from "@/lib/song";
 
 /** Keeps the saved session small when a long list follows a pick. */
 const MAX_QUEUE = 200;
+/** How often the playing position is saved; other changes save at once. */
+const SESSION_SAVE_INTERVAL_MS = 5000;
 
 export interface PersonalPlayer {
   queue: LocalQueueEntry[];
@@ -82,6 +85,30 @@ const PlayerContext = createContext<PersonalPlayer | null>(null);
 const ProgressContext = createContext<Progress>({ currentTime: 0, duration: 0 });
 const ShellContext = createContext<Shell | null>(null);
 
+type PlayerActions = Pick<
+  PersonalPlayer,
+  | "playFromList"
+  | "togglePlay"
+  | "addToQueue"
+  | "jump"
+  | "remove"
+  | "move"
+  | "clearUpcoming"
+  | "next"
+  | "previous"
+  | "toggleShuffle"
+  | "cycleRepeat"
+>;
+/**
+ * What song cards need, kept apart from the rest of the player so a
+ * long list of cards doesn't re-render when the queue or volume changes.
+ */
+const ActionsContext = createContext<PlayerActions | null>(null);
+const NowPlayingContext = createContext<{
+  currentId: string | null;
+  isPlaying: boolean;
+}>({ currentId: null, isPlaying: false });
+
 function required<T>(value: T | null, name: string): T {
   if (!value) throw new Error(`${name} must be used inside <PlayerProvider>.`);
   return value;
@@ -90,6 +117,9 @@ function required<T>(value: T | null, name: string): T {
 export const usePlayer = () =>
   required(useContext(PlayerContext), "usePlayer");
 export const usePlayerProgress = () => useContext(ProgressContext);
+export const usePlayerActions = () =>
+  required(useContext(ActionsContext), "usePlayerActions");
+export const useNowPlaying = () => useContext(NowPlayingContext);
 export const usePlayerShell = () =>
   required(useContext(ShellContext), "usePlayerShell");
 
@@ -188,28 +218,52 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [whenReady, load, setVolume, setMuted]);
 
   // Keep the session saved so a reload can pick up where it left off.
+  // The position changes twice a second and the queue can be 200 songs,
+  // so it is written every few seconds (and when the tab is hidden),
+  // while changes to the queue and settings are written straight away.
+  const sessionRef = useRef<PlaybackSession | null>(null);
   useEffect(() => {
-    if (!current) return;
+    sessionRef.current = current
+      ? {
+          queue,
+          index: queueIndex,
+          position: currentTime,
+          duration,
+          volume,
+          muted,
+          // A blocked resume still counts as "playing": the user never paused it.
+          wasPlaying:
+            status === "playing" || status === "loading" || autoplayBlocked,
+          shuffle,
+          repeat,
+        }
+      : null;
+  });
 
-    writePlaybackSession({
-      queue,
-      index: queueIndex,
-      position: currentTime,
-      duration,
-      volume,
-      muted,
-      // A blocked resume still counts as "playing": the user never paused it.
-      wasPlaying:
-        status === "playing" || status === "loading" || autoplayBlocked,
-      shuffle,
-      repeat,
-    });
+  useEffect(() => {
+    const save = () => {
+      if (sessionRef.current) writePlaybackSession(sessionRef.current);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") save();
+    };
+
+    const interval = window.setInterval(save, SESSION_SAVE_INTERVAL_MS);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", save);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", save);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionRef.current) writePlaybackSession(sessionRef.current);
   }, [
     current,
     queue,
     queueIndex,
-    currentTime,
-    duration,
     volume,
     muted,
     status,
@@ -463,6 +517,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ]
   );
 
+  const nowPlaying = useMemo(
+    () => ({
+      currentId: current?.id ?? null,
+      isPlaying: status === "playing" || status === "loading",
+    }),
+    [current?.id, status]
+  );
   const progress = useMemo(
     () => ({ currentTime, duration }),
     [currentTime, duration]
@@ -481,11 +542,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext.Provider value={shell}>
-      <PlayerContext.Provider value={value}>
-        <ProgressContext.Provider value={progress}>
-          {children}
-        </ProgressContext.Provider>
-      </PlayerContext.Provider>
+      <ActionsContext.Provider value={actions}>
+        <NowPlayingContext.Provider value={nowPlaying}>
+          <PlayerContext.Provider value={value}>
+            <ProgressContext.Provider value={progress}>
+              {children}
+            </ProgressContext.Provider>
+          </PlayerContext.Provider>
+        </NowPlayingContext.Provider>
+      </ActionsContext.Provider>
     </ShellContext.Provider>
   );
 }

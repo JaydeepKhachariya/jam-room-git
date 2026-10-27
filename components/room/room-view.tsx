@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -45,6 +46,7 @@ import { useYouTubePlayer } from "@/hooks/use-youtube-player";
 import { suggestionsUrl } from "@/lib/interests";
 import { forgetRooms, rememberRoom } from "@/lib/my-rooms";
 import { playbackPosition, type RoomMember } from "@/lib/room";
+import type { Song } from "@/lib/song";
 
 /** How far a playing listener may drift from the room before correcting. */
 const DRIFT_TOLERANCE_S = 0.8;
@@ -80,6 +82,38 @@ export function RoomView({ roomId }: { roomId: string }) {
       queue.slice(Math.max(0, playback.index)).map((song) => song.id)
     );
   }, [queue, playback]);
+
+  // The player clock ticks twice a second and re-renders this whole
+  // view, so what the song list and queue are given stays referentially
+  // stable: their rows skip re-rendering between song changes.
+  const addSong = useCallback(
+    (song: Song) => {
+      if (!name) return;
+      setPlaybackError("");
+      void send({ type: "add", song, addedBy: name });
+    },
+    [send, name]
+  );
+  const jumpTo = useCallback(
+    (queueId: string) => {
+      setPlaybackError("");
+      void send({ type: "jump", queueId });
+    },
+    [send]
+  );
+  const removeFromQueue = useCallback(
+    (queueId: string) => void send({ type: "remove", queueId }),
+    [send]
+  );
+  const moveInRoomQueue = useCallback(
+    (queueId: string, afterQueueId: string | null) =>
+      void send({ type: "move", queueId, afterQueueId }),
+    [send]
+  );
+  const addedByDetail = useCallback(
+    (song: { addedBy: string }) => `added by ${song.addedBy}`,
+    []
+  );
 
   const player = useYouTubePlayer({
     onEnded: () => {
@@ -441,17 +475,13 @@ export function RoomView({ roomId }: { roomId: string }) {
                 : "Search for any song or artist to get started."
             }
             renderCard={(song) => (
-              <SongCard
+              <AddSongCard
                 key={song.id}
                 song={song}
-                action="add"
                 isCurrent={current?.id === song.id}
                 queued={queuedSongIds.has(song.id)}
                 readOnly={!canEdit}
-                onSelect={() => {
-                  setPlaybackError("");
-                  void send({ type: "add", song, addedBy: name });
-                }}
+                onAdd={addSong}
               />
             )}
           />
@@ -474,16 +504,11 @@ export function RoomView({ roomId }: { roomId: string }) {
           currentIndex={playback.index}
           playing={playback.playing}
           emptyText="Nothing queued. Add a song to get started."
-          detail={(song) => `added by ${song.addedBy}`}
+          detail={addedByDetail}
           editable={canEdit}
-          onJump={(queueId) => {
-            setPlaybackError("");
-            void send({ type: "jump", queueId });
-          }}
-          onRemove={(queueId) => void send({ type: "remove", queueId })}
-          onMove={(queueId, afterQueueId) =>
-            void send({ type: "move", queueId, afterQueueId })
-          }
+          onJump={jumpTo}
+          onRemove={removeFromQueue}
+          onMove={moveInRoomQueue}
         />
       </SidePanel>
 
@@ -513,6 +538,34 @@ export function RoomView({ roomId }: { roomId: string }) {
     </>
   );
 }
+
+/** A song card that adds to the room; memoized so ticks don't re-render it. */
+const AddSongCard = memo(function AddSongCard({
+  song,
+  isCurrent,
+  queued,
+  readOnly,
+  onAdd,
+}: {
+  song: Song;
+  isCurrent: boolean;
+  queued: boolean;
+  readOnly: boolean;
+  onAdd: (song: Song) => void;
+}) {
+  const onSelect = useCallback(() => onAdd(song), [onAdd, song]);
+
+  return (
+    <SongCard
+      song={song}
+      action="add"
+      isCurrent={isCurrent}
+      queued={queued}
+      readOnly={readOnly}
+      onSelect={onSelect}
+    />
+  );
+});
 
 function CenteredState({
   icon,
